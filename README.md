@@ -54,7 +54,3 @@ cp .env.example .env
 3. **Warehouse** — Snowflake for storage and compute
 4. **Transform** — dbt for curated analytics models
 5. **Visualize** — Apache Superset for dashboards and arbitrage insights
-
-## License
-
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.

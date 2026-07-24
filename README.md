@@ -40,6 +40,13 @@ Copy the environment template and adjust values as needed:
 cp .env.example .env
 ```
 
+## Step 2 - IoT Sensor Schema
+
+- Designed the IoT event schema for refrigerated agricultural shipping containers (`config/sensor_schema.json`).
+- Fields: `container_id`, `shipment_id`, `commodity_name`, `timestamp`, `latitude`, `longitude`, `temperature`, `humidity`, `vibration`, `battery_level`, `transport_status`.
+- Purpose: define a consistent, validated event contract for streaming sensor data through Kafka, Snowflake, and downstream analytics.
+- Added sample JSON event in the schema `examples` block (avocado shipment in transit, Mexico City coordinates).
+
 ## Documentation
 
 <!-- TODO: Add architecture overview -->
@@ -55,6 +62,4 @@ cp .env.example .env
 4. **Transform** — dbt for curated analytics models
 5. **Visualize** — Apache Superset for dashboards and arbitrage insights
 
-## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.

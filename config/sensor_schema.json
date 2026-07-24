@@ -1,0 +1,121 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://atmosync.io/schemas/sensor-event/v1",
+  "title": "Agricultural Shipping Container Sensor Event",
+  "description": "Streaming IoT event schema for refrigerated agricultural shipping containers. Each event represents a single sensor reading emitted at a fixed interval (typically 30–60 seconds) during cold-chain transport.",
+  "type": "object",
+  "required": [
+    "container_id",
+    "shipment_id",
+    "commodity_name",
+    "timestamp",
+    "latitude",
+    "longitude",
+    "temperature",
+    "humidity",
+    "vibration",
+    "battery_level",
+    "transport_status"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "container_id": {
+      "type": "string",
+      "description": "Unique identifier for the shipping container (ISO 6346-style).",
+      "pattern": "^[A-Z]{4}[0-9]{7}$",
+      "examples": ["MSCU4829176"]
+    },
+    "shipment_id": {
+      "type": "string",
+      "description": "Identifier linking the container to a specific shipment manifest.",
+      "pattern": "^SHP-[0-9]{8}-[0-9]{4}$",
+      "examples": ["SHP-20260724-0042"]
+    },
+    "commodity_name": {
+      "type": "string",
+      "description": "Agricultural commodity being transported.",
+      "enum": [
+        "avocados",
+        "blueberries",
+        "strawberries",
+        "grapes",
+        "mangoes",
+        "citrus",
+        "leafy_greens",
+        "tomatoes",
+        "bananas",
+        "apples"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "description": "UTC timestamp when the sensor reading was captured (ISO 8601).",
+      "format": "date-time"
+    },
+    "latitude": {
+      "type": "number",
+      "description": "GPS latitude of the container at reading time (decimal degrees).",
+      "minimum": -90,
+      "maximum": 90
+    },
+    "longitude": {
+      "type": "number",
+      "description": "GPS longitude of the container at reading time (decimal degrees).",
+      "minimum": -180,
+      "maximum": 180
+    },
+    "temperature": {
+      "type": "number",
+      "description": "Internal container temperature in degrees Celsius. Cold-chain produce typically ranges 0–8 °C.",
+      "minimum": -5,
+      "maximum": 25
+    },
+    "humidity": {
+      "type": "number",
+      "description": "Relative humidity inside the container (percent). Produce cold-chain target is 85–95%.",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "vibration": {
+      "type": "number",
+      "description": "Vibration intensity in g (gravitational acceleration). Normal transit is 0–0.5 g; impacts may exceed 2 g.",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "battery_level": {
+      "type": "number",
+      "description": "Remaining battery charge of the IoT sensor unit (percent).",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "transport_status": {
+      "type": "string",
+      "description": "Current phase of the container in the logistics lifecycle.",
+      "enum": [
+        "loading",
+        "in_transit",
+        "at_port",
+        "customs_hold",
+        "unloading",
+        "delivered",
+        "idle",
+        "sensor_alert"
+      ]
+    }
+  },
+  "examples": [
+    {
+      "container_id": "MSCU4829176",
+      "shipment_id": "SHP-20260724-0042",
+      "commodity_name": "avocados",
+      "timestamp": "2026-07-24T14:32:18.452Z",
+      "latitude": 19.4326,
+      "longitude": -99.1332,
+      "temperature": 4.2,
+      "humidity": 92.5,
+      "vibration": 0.18,
+      "battery_level": 87.3,
+      "transport_status": "in_transit"
+    }
+  ]
+}

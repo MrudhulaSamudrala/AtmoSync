@@ -15,8 +15,8 @@ AtmoSync/
 ├── docs/           # Architecture, runbooks, and project documentation
 ├── tests/          # Automated tests
 ├── config/         # Application and environment configuration
-├── scripts/        # Utility and deployment scripts
-└── logs/           # Runtime log output (gitignored)
+└── scripts/        # Utility and deployment scripts
+
 ```
 
 ## Setup

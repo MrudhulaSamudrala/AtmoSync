@@ -47,6 +47,20 @@ cp .env.example .env
 - Purpose: define a consistent, validated event contract for streaming sensor data through Kafka, Snowflake, and downstream analytics.
 - Added sample JSON event in the schema `examples` block (avocado shipment in transit, Mexico City coordinates).
 
+## Step 3 - IoT Simulator
+
+- Built a Python IoT simulator (`producer/simulator.py`).
+- Simulates 20 agricultural shipping containers.
+- Generates one JSON event every second.
+- Produces realistic telemetry data (commodity-based temperature/humidity, GPS drift, battery drain, vibration).
+- Uses the previously designed sensor schema for field enums and value ranges.
+
+Run the simulator:
+
+```bash
+python producer/simulator.py
+```
+
 ## Documentation
 
 <!-- TODO: Add architecture overview -->

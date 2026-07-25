@@ -54,6 +54,16 @@ COMMODITY_PROFILES = {
     "apples": {"temp": 2.0, "temp_sigma": 0.3, "humidity": 90.0, "humidity_sigma": 2.0},
 }
 
+# Anomaly types and trigger probability range (1–3% per update when normal).
+ANOMALY_TYPES = (
+    "temperature_spike",
+    "humidity_spike",
+    "heavy_vibration",
+    "battery_failure",
+)
+ANOMALY_TRIGGER_PROB_MIN = 0.01
+ANOMALY_TRIGGER_PROB_MAX = 0.03
+
 
 @dataclass
 class SchemaConstraints:
@@ -91,6 +101,11 @@ class ContainerState:
     transport_status: str
     heading: float  # movement bearing in radians
     tick: int = 0
+    anomaly_type: str = "normal"
+    anomaly_active_remaining: int = 0
+    anomaly_recovery_remaining: int = 0
+    anomaly_recovery_ticks: int = 0
+    saved_battery_level: float | None = None
 
 
 def load_schema(schema_path: Path = DEFAULT_SCHEMA_PATH) -> dict:
@@ -250,14 +265,169 @@ def update_transport_status(state: ContainerState, constraints: SchemaConstraint
         state.transport_status = random.choice(constraints.transport_statuses)
 
 
+def maybe_generate_anomaly(state: ContainerState) -> None:
+    """Randomly trigger a new anomaly when the container is in a normal state."""
+    if state.anomaly_type != "normal":
+        return
+
+    trigger_probability = random.uniform(ANOMALY_TRIGGER_PROB_MIN, ANOMALY_TRIGGER_PROB_MAX)
+    if random.random() >= trigger_probability:
+        return
+
+    anomaly_type = random.choice(ANOMALY_TYPES)
+    state.anomaly_type = anomaly_type
+    state.anomaly_active_remaining = random.randint(15, 45)
+    state.anomaly_recovery_remaining = 0
+    state.anomaly_recovery_ticks = random.randint(20, 60)
+
+    if anomaly_type == "battery_failure":
+        state.saved_battery_level = state.battery_level
+
+
+def get_anomaly_intensity(state: ContainerState) -> float:
+    """
+    Return the current anomaly effect strength.
+
+    1.0 during the active phase; linearly decays to 0.0 over the recovery phase.
+    """
+    if state.anomaly_type == "normal":
+        return 0.0
+    if state.anomaly_active_remaining > 0:
+        return 1.0
+    if state.anomaly_recovery_remaining > 0 and state.anomaly_recovery_ticks > 0:
+        return state.anomaly_recovery_remaining / state.anomaly_recovery_ticks
+    return 0.0
+
+
+def apply_anomaly_temperature_spike(
+    state: ContainerState,
+    constraints: SchemaConstraints,
+    intensity: float,
+) -> None:
+    """Push temperature well above the cold-chain setpoint during a spike event."""
+    profile = get_commodity_profile(state.commodity_name)
+    spike = random.uniform(8.0, 15.0) * intensity
+    state.temperature = clamp(
+        profile["temp"] + spike,
+        constraints.temp_min,
+        constraints.temp_max,
+    )
+
+
+def apply_anomaly_humidity_spike(
+    state: ContainerState,
+    constraints: SchemaConstraints,
+    intensity: float,
+) -> None:
+    """Push humidity toward saturation during a condensation / seal-failure event."""
+    spike = random.uniform(5.0, 12.0) * intensity
+    state.humidity = clamp(
+        state.humidity + spike,
+        constraints.humidity_min,
+        constraints.humidity_max,
+    )
+
+
+def apply_anomaly_heavy_vibration(
+    state: ContainerState,
+    constraints: SchemaConstraints,
+    intensity: float,
+) -> None:
+    """Simulate impact or rough-handling vibration well above normal transit levels."""
+    heavy_level = random.uniform(2.5, 4.5) * intensity + random.uniform(0.05, 0.2)
+    state.vibration = clamp(heavy_level, constraints.vibration_min, constraints.vibration_max)
+
+
+def apply_anomaly_battery_failure(
+    state: ContainerState,
+    constraints: SchemaConstraints,
+    intensity: float,
+) -> None:
+    """Simulate rapid battery depletion during a sensor power fault."""
+    if intensity >= 0.95:
+        target = random.uniform(2.0, 8.0)
+    else:
+        saved = state.saved_battery_level if state.saved_battery_level is not None else 50.0
+        target = saved * (1.0 - intensity) + random.uniform(2.0, 8.0) * intensity
+    state.battery_level = clamp(target, constraints.battery_min, constraints.battery_max)
+
+
+def apply_anomaly_effects(state: ContainerState, constraints: SchemaConstraints) -> None:
+    """Apply the sensor distortion matching the active anomaly type."""
+    intensity = get_anomaly_intensity(state)
+    if intensity <= 0:
+        return
+
+    if state.anomaly_type == "temperature_spike":
+        apply_anomaly_temperature_spike(state, constraints, intensity)
+    elif state.anomaly_type == "humidity_spike":
+        apply_anomaly_humidity_spike(state, constraints, intensity)
+    elif state.anomaly_type == "heavy_vibration":
+        apply_anomaly_heavy_vibration(state, constraints, intensity)
+    elif state.anomaly_type == "battery_failure":
+        apply_anomaly_battery_failure(state, constraints, intensity)
+
+
+def recover_from_anomaly(state: ContainerState, constraints: SchemaConstraints) -> None:
+    """Gradually pull affected sensors back toward normal during the recovery phase."""
+    if state.anomaly_active_remaining > 0 or state.anomaly_type == "normal":
+        return
+
+    intensity = get_anomaly_intensity(state)
+    if intensity <= 0:
+        return
+
+    profile = get_commodity_profile(state.commodity_name)
+    recovery_strength = 0.12 * (1.0 - intensity)
+
+    if state.anomaly_type == "temperature_spike":
+        state.temperature += (profile["temp"] - state.temperature) * recovery_strength
+        state.temperature = clamp(state.temperature, constraints.temp_min, constraints.temp_max)
+
+    elif state.anomaly_type == "humidity_spike":
+        state.humidity += (profile["humidity"] - state.humidity) * recovery_strength
+        state.humidity = clamp(state.humidity, constraints.humidity_min, constraints.humidity_max)
+
+    elif state.anomaly_type == "heavy_vibration":
+        normal_vibration = random.uniform(0.05, 0.25)
+        state.vibration += (normal_vibration - state.vibration) * recovery_strength
+        state.vibration = clamp(state.vibration, constraints.vibration_min, constraints.vibration_max)
+
+    elif state.anomaly_type == "battery_failure" and state.saved_battery_level is not None:
+        state.battery_level += (state.saved_battery_level - state.battery_level) * recovery_strength * 0.5
+        state.battery_level = clamp(state.battery_level, constraints.battery_min, constraints.battery_max)
+
+
+def advance_anomaly_lifecycle(state: ContainerState) -> None:
+    """Decrement anomaly timers and reset state when recovery completes."""
+    if state.anomaly_type == "normal":
+        return
+
+    if state.anomaly_active_remaining > 0:
+        state.anomaly_active_remaining -= 1
+        if state.anomaly_active_remaining == 0:
+            state.anomaly_recovery_remaining = state.anomaly_recovery_ticks
+        return
+
+    if state.anomaly_recovery_remaining > 0:
+        state.anomaly_recovery_remaining -= 1
+        if state.anomaly_recovery_remaining == 0:
+            state.anomaly_type = "normal"
+            state.saved_battery_level = None
+
+
 def advance_container(state: ContainerState, constraints: SchemaConstraints) -> None:
     """Apply all telemetry updates for one simulation tick."""
+    maybe_generate_anomaly(state)
     update_temperature(state, constraints)
     update_humidity(state, constraints)
     update_battery(state, constraints)
     update_position(state, constraints)
     update_vibration(state, constraints)
     update_transport_status(state, constraints)
+    apply_anomaly_effects(state, constraints)
+    recover_from_anomaly(state, constraints)
+    advance_anomaly_lifecycle(state)
     state.tick += 1
 
 
@@ -275,6 +445,7 @@ def build_event(state: ContainerState) -> dict:
         "vibration": round(state.vibration, 3),
         "battery_level": round(state.battery_level, 2),
         "transport_status": state.transport_status,
+        "anomaly_type": state.anomaly_type,
     }
 
 

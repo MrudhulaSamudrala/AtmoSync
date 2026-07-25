@@ -61,6 +61,15 @@ Run the simulator:
 python producer/simulator.py
 ```
 
+## Step 4 - Anomaly Simulation
+
+- Added realistic anomaly generation.
+- Simulated temperature spikes.
+- Simulated humidity spikes.
+- Simulated heavy vibration events.
+- Simulated battery failures.
+- Added `anomaly_type` field to telemetry events.
+
 ## Documentation
 
 <!-- TODO: Add architecture overview -->

@@ -15,7 +15,8 @@
     "humidity",
     "vibration",
     "battery_level",
-    "transport_status"
+    "transport_status",
+    "anomaly_type"
   ],
   "additionalProperties": false,
   "properties": {
@@ -101,6 +102,17 @@
         "idle",
         "sensor_alert"
       ]
+    },
+    "anomaly_type": {
+      "type": "string",
+      "description": "Active sensor anomaly classification for the current reading.",
+      "enum": [
+        "normal",
+        "temperature_spike",
+        "humidity_spike",
+        "heavy_vibration",
+        "battery_failure"
+      ]
     }
   },
   "examples": [
@@ -115,7 +127,8 @@
       "humidity": 92.5,
       "vibration": 0.18,
       "battery_level": 87.3,
-      "transport_status": "in_transit"
+      "transport_status": "in_transit",
+      "anomaly_type": "normal"
     }
   ]
 }

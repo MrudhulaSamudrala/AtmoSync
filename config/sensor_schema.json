@@ -18,7 +18,10 @@
     "battery_level",
     "transport_status",
     "anomaly_type",
-    "health_score"
+    "health_score",
+    "spoilage_percentage",
+    "remaining_shelf_life_days",
+    "spoilage_risk_level"
   ],
   "additionalProperties": false,
   "properties": {
@@ -126,6 +129,22 @@
       "description": "Composite container health score (0–100) derived from temperature, humidity, vibration, and battery readings against commodity-specific ideal conditions.",
       "minimum": 0,
       "maximum": 100
+    },
+    "spoilage_percentage": {
+      "type": "number",
+      "description": "Estimated cumulative spoilage (0–100%) based on commodity shelf life, environmental stress, and container health.",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "remaining_shelf_life_days": {
+      "type": "number",
+      "description": "Estimated remaining shelf life in days, derived from cumulative spoilage and the commodity's configured shelf life.",
+      "minimum": 0
+    },
+    "spoilage_risk_level": {
+      "type": "string",
+      "description": "Discrete spoilage risk classification derived from spoilage percentage.",
+      "enum": ["Low", "Medium", "High", "Critical"]
     }
   },
   "examples": [
@@ -143,7 +162,10 @@
       "battery_level": 87.3,
       "transport_status": "in_transit",
       "anomaly_type": "normal",
-      "health_score": 97.5
+      "health_score": 97.5,
+      "spoilage_percentage": 2.5,
+      "remaining_shelf_life_days": 13.65,
+      "spoilage_risk_level": "Low"
     }
   ]
 }

@@ -78,6 +78,14 @@ python producer/simulator.py
 - Simulated battery failures.
 - Added `anomaly_type` field to telemetry events.
 
+## Step 6 - Spoilage Estimation
+
+- Added spoilage percentage calculation.
+- Added remaining shelf life estimation.
+- Added spoilage risk classification.
+- Spoilage uses health score and commodity properties.
+- New spoilage fields included in every telemetry event.
+
 ## Documentation
 
 <!-- TODO: Add architecture overview -->

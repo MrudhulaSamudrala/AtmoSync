@@ -26,6 +26,11 @@ from commodity_config import (
     load_commodities,
 )
 from health_score import calculate_health_score
+from spoilage import (
+    calculate_remaining_shelf_life_days,
+    classify_spoilage_risk,
+    estimate_spoilage_metrics,
+)
 
 # ---------------------------------------------------------------------------
 # Paths & configuration
@@ -103,6 +108,7 @@ class ContainerState:
     anomaly_recovery_remaining: int = 0
     anomaly_recovery_ticks: int = 0
     saved_battery_level: float | None = None
+    spoilage_percentage: float = 0.0
 
 
 def load_schema(schema_path: Path = DEFAULT_SCHEMA_PATH) -> dict:
@@ -414,7 +420,34 @@ def advance_anomaly_lifecycle(state: ContainerState) -> None:
             state.saved_battery_level = None
 
 
-def advance_container(state: ContainerState, constraints: SchemaConstraints) -> None:
+def update_spoilage(
+    state: ContainerState,
+    interval_seconds: float,
+) -> None:
+    """Advance cumulative spoilage based on current sensors and health score."""
+    health_score = calculate_health_score(
+        state.commodity,
+        state.temperature,
+        state.humidity,
+        state.vibration,
+        state.battery_level,
+    )
+    metrics = estimate_spoilage_metrics(
+        state.commodity,
+        state.temperature,
+        state.humidity,
+        health_score,
+        state.spoilage_percentage,
+        interval_seconds,
+    )
+    state.spoilage_percentage = float(metrics["spoilage_percentage"])
+
+
+def advance_container(
+    state: ContainerState,
+    constraints: SchemaConstraints,
+    interval_seconds: float = 1.0,
+) -> None:
     """Apply all telemetry updates for one simulation tick."""
     maybe_generate_anomaly(state)
     update_temperature(state, constraints)
@@ -426,11 +459,20 @@ def advance_container(state: ContainerState, constraints: SchemaConstraints) -> 
     apply_anomaly_effects(state, constraints)
     recover_from_anomaly(state, constraints)
     advance_anomaly_lifecycle(state)
+    update_spoilage(state, interval_seconds)
     state.tick += 1
 
 
 def build_event(state: ContainerState) -> dict:
     """Build a schema-compliant sensor event dict from the current container state."""
+    health_score = calculate_health_score(
+        state.commodity,
+        state.temperature,
+        state.humidity,
+        state.vibration,
+        state.battery_level,
+    )
+
     return {
         "container_id": state.container_id,
         "shipment_id": state.shipment_id,
@@ -445,13 +487,13 @@ def build_event(state: ContainerState) -> dict:
         "battery_level": round(state.battery_level, 2),
         "transport_status": state.transport_status,
         "anomaly_type": state.anomaly_type,
-        "health_score": calculate_health_score(
+        "health_score": health_score,
+        "spoilage_percentage": state.spoilage_percentage,
+        "remaining_shelf_life_days": calculate_remaining_shelf_life_days(
             state.commodity,
-            state.temperature,
-            state.humidity,
-            state.vibration,
-            state.battery_level,
+            state.spoilage_percentage,
         ),
+        "spoilage_risk_level": classify_spoilage_risk(state.spoilage_percentage),
     }
 
 
@@ -485,7 +527,7 @@ def run_simulation(
     try:
         while True:
             for container in fleet:
-                advance_container(container, constraints)
+                advance_container(container, constraints, interval_seconds)
                 print_event(build_event(container))
             time.sleep(interval_seconds)
     except KeyboardInterrupt:

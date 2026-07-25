@@ -15,6 +15,7 @@ AtmoSync/
 ├── docs/           # Architecture, runbooks, and project documentation
 ├── tests/          # Automated tests
 ├── config/         # Application and environment configuration
+├── kafka/          # Kafka producer and consumer modules
 └── scripts/        # Utility and deployment scripts
 
 ```
@@ -85,6 +86,13 @@ python producer/simulator.py
 - Added spoilage risk classification.
 - Spoilage uses health score and commodity properties.
 - New spoilage fields included in every telemetry event.
+
+## Step 7 - Kafka Infrastructure
+
+- Prepared Kafka configuration.
+- Added environment configuration.
+- Created producer and consumer modules.
+- Project ready for Kafka integration.
 
 ## Documentation
 

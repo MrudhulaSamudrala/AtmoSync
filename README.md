@@ -61,7 +61,15 @@ Run the simulator:
 python producer/simulator.py
 ```
 
-## Step 4 - Anomaly Simulation
+## Step 4 - Commodity Configuration
+
+- Added commodity master dataset.
+- Supports five agricultural commodities.
+- Commodity information is loaded from datasets/commodities.csv.
+- Containers are assigned commodities during initialization.
+- Sensor values are generated according to commodity-specific storage conditions.
+
+## Step 5 - Anomaly Simulation
 
 - Added realistic anomaly generation.
 - Simulated temperature spikes.

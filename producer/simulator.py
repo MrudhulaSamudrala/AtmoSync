@@ -18,6 +18,15 @@ from pathlib import Path
 from dotenv import load_dotenv
 import os
 
+from commodity_config import (
+    Commodity,
+    DEFAULT_COMMODITIES_PATH,
+    assign_commodity,
+    get_simulation_profile,
+    load_commodities,
+)
+from health_score import calculate_health_score
+
 # ---------------------------------------------------------------------------
 # Paths & configuration
 # ---------------------------------------------------------------------------
@@ -39,20 +48,6 @@ ROUTE_ORIGINS = (
     (-34.6037, -58.3816),  # Buenos Aires region
     (14.5995, 120.9842),   # Manila region
 )
-
-# Target cold-chain conditions per commodity (centre points for simulation).
-COMMODITY_PROFILES = {
-    "avocados": {"temp": 5.0, "temp_sigma": 0.4, "humidity": 90.0, "humidity_sigma": 2.0},
-    "blueberries": {"temp": 1.0, "temp_sigma": 0.3, "humidity": 92.0, "humidity_sigma": 1.5},
-    "strawberries": {"temp": 0.5, "temp_sigma": 0.3, "humidity": 93.0, "humidity_sigma": 1.5},
-    "grapes": {"temp": 1.0, "temp_sigma": 0.3, "humidity": 91.0, "humidity_sigma": 2.0},
-    "mangoes": {"temp": 12.0, "temp_sigma": 0.5, "humidity": 88.0, "humidity_sigma": 2.5},
-    "citrus": {"temp": 6.0, "temp_sigma": 0.4, "humidity": 89.0, "humidity_sigma": 2.0},
-    "leafy_greens": {"temp": 2.0, "temp_sigma": 0.3, "humidity": 96.0, "humidity_sigma": 1.0},
-    "tomatoes": {"temp": 11.0, "temp_sigma": 0.4, "humidity": 87.0, "humidity_sigma": 2.0},
-    "bananas": {"temp": 14.0, "temp_sigma": 0.5, "humidity": 90.0, "humidity_sigma": 2.0},
-    "apples": {"temp": 2.0, "temp_sigma": 0.3, "humidity": 90.0, "humidity_sigma": 2.0},
-}
 
 # Anomaly types and trigger probability range (1–3% per update when normal).
 ANOMALY_TYPES = (
@@ -91,7 +86,9 @@ class ContainerState:
 
     container_id: str
     shipment_id: str
+    commodity_id: str
     commodity_name: str
+    commodity: Commodity
     latitude: float
     longitude: float
     temperature: float
@@ -154,18 +151,13 @@ def generate_shipment_id() -> str:
     return f"SHP-{date_part}-{sequence:04d}"
 
 
-def get_commodity_profile(commodity_name: str) -> dict[str, float]:
-    """Return simulation targets for a commodity, falling back to a safe default."""
-    return COMMODITY_PROFILES.get(
-        commodity_name,
-        {"temp": 4.0, "temp_sigma": 0.5, "humidity": 90.0, "humidity_sigma": 2.0},
-    )
-
-
-def create_container_state(constraints: SchemaConstraints) -> ContainerState:
+def create_container_state(
+    constraints: SchemaConstraints,
+    commodities: list[Commodity],
+) -> ContainerState:
     """Initialize a single container with realistic starting telemetry."""
-    commodity = random.choice(constraints.commodities)
-    profile = get_commodity_profile(commodity)
+    commodity = assign_commodity(commodities)
+    profile = get_simulation_profile(commodity)
     origin_lat, origin_lng = random.choice(ROUTE_ORIGINS)
 
     # Scatter containers near their route origin.
@@ -175,7 +167,9 @@ def create_container_state(constraints: SchemaConstraints) -> ContainerState:
     return ContainerState(
         container_id=generate_container_id(),
         shipment_id=generate_shipment_id(),
-        commodity_name=commodity,
+        commodity_id=commodity.commodity_id,
+        commodity_name=commodity.commodity_name,
+        commodity=commodity,
         latitude=clamp(latitude, constraints.lat_min, constraints.lat_max),
         longitude=clamp(longitude, constraints.lng_min, constraints.lng_max),
         temperature=clamp(
@@ -195,14 +189,18 @@ def create_container_state(constraints: SchemaConstraints) -> ContainerState:
     )
 
 
-def initialize_fleet(count: int, constraints: SchemaConstraints) -> list[ContainerState]:
+def initialize_fleet(
+    count: int,
+    constraints: SchemaConstraints,
+    commodities: list[Commodity],
+) -> list[ContainerState]:
     """Create the full set of simulated containers."""
-    return [create_container_state(constraints) for _ in range(count)]
+    return [create_container_state(constraints, commodities) for _ in range(count)]
 
 
 def update_temperature(state: ContainerState, constraints: SchemaConstraints) -> None:
     """Drift temperature around the commodity target with small random noise."""
-    profile = get_commodity_profile(state.commodity_name)
+    profile = get_simulation_profile(state.commodity)
     # Mean-reverting random walk keeps readings near the ideal cold-chain setpoint.
     drift = (profile["temp"] - state.temperature) * 0.05
     noise = random.gauss(0, profile["temp_sigma"] * 0.15)
@@ -215,7 +213,7 @@ def update_temperature(state: ContainerState, constraints: SchemaConstraints) ->
 
 def update_humidity(state: ContainerState, constraints: SchemaConstraints) -> None:
     """Drift humidity around the commodity target with constrained noise."""
-    profile = get_commodity_profile(state.commodity_name)
+    profile = get_simulation_profile(state.commodity)
     drift = (profile["humidity"] - state.humidity) * 0.04
     noise = random.gauss(0, profile["humidity_sigma"] * 0.2)
     state.humidity = clamp(
@@ -305,7 +303,7 @@ def apply_anomaly_temperature_spike(
     intensity: float,
 ) -> None:
     """Push temperature well above the cold-chain setpoint during a spike event."""
-    profile = get_commodity_profile(state.commodity_name)
+    profile = get_simulation_profile(state.commodity)
     spike = random.uniform(8.0, 15.0) * intensity
     state.temperature = clamp(
         profile["temp"] + spike,
@@ -377,7 +375,7 @@ def recover_from_anomaly(state: ContainerState, constraints: SchemaConstraints) 
     if intensity <= 0:
         return
 
-    profile = get_commodity_profile(state.commodity_name)
+    profile = get_simulation_profile(state.commodity)
     recovery_strength = 0.12 * (1.0 - intensity)
 
     if state.anomaly_type == "temperature_spike":
@@ -436,6 +434,7 @@ def build_event(state: ContainerState) -> dict:
     return {
         "container_id": state.container_id,
         "shipment_id": state.shipment_id,
+        "commodity_id": state.commodity_id,
         "commodity_name": state.commodity_name,
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
         "latitude": round(state.latitude, 6),
@@ -446,6 +445,13 @@ def build_event(state: ContainerState) -> dict:
         "battery_level": round(state.battery_level, 2),
         "transport_status": state.transport_status,
         "anomaly_type": state.anomaly_type,
+        "health_score": calculate_health_score(
+            state.commodity,
+            state.temperature,
+            state.humidity,
+            state.vibration,
+            state.battery_level,
+        ),
     }
 
 
@@ -459,6 +465,7 @@ def run_simulation(
     container_count: int = 20,
     interval_seconds: float = 1.0,
     schema_path: Path = DEFAULT_SCHEMA_PATH,
+    commodities_path: Path = DEFAULT_COMMODITIES_PATH,
 ) -> None:
     """
     Run the IoT simulator continuously until interrupted (Ctrl+C).
@@ -467,10 +474,12 @@ def run_simulation(
     """
     schema = load_schema(schema_path)
     constraints = parse_schema_constraints(schema)
-    fleet = initialize_fleet(container_count, constraints)
+    commodities = load_commodities(commodities_path)
+    fleet = initialize_fleet(container_count, constraints, commodities)
 
     print(f"Starting AtmoSync IoT simulator — {container_count} containers, {interval_seconds}s interval")
     print(f"Schema: {schema_path}")
+    print(f"Commodities: {commodities_path} ({len(commodities)} loaded)")
     print("Press Ctrl+C to stop.\n")
 
     try:

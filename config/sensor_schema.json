@@ -7,6 +7,7 @@
   "required": [
     "container_id",
     "shipment_id",
+    "commodity_id",
     "commodity_name",
     "timestamp",
     "latitude",
@@ -16,7 +17,8 @@
     "vibration",
     "battery_level",
     "transport_status",
-    "anomaly_type"
+    "anomaly_type",
+    "health_score"
   ],
   "additionalProperties": false,
   "properties": {
@@ -31,6 +33,11 @@
       "description": "Identifier linking the container to a specific shipment manifest.",
       "pattern": "^SHP-[0-9]{8}-[0-9]{4}$",
       "examples": ["SHP-20260724-0042"]
+    },
+    "commodity_id": {
+      "type": "string",
+      "description": "Unique identifier for the agricultural commodity in the master dataset.",
+      "examples": ["AVO001"]
     },
     "commodity_name": {
       "type": "string",
@@ -113,12 +120,19 @@
         "heavy_vibration",
         "battery_failure"
       ]
+    },
+    "health_score": {
+      "type": "number",
+      "description": "Composite container health score (0–100) derived from temperature, humidity, vibration, and battery readings against commodity-specific ideal conditions.",
+      "minimum": 0,
+      "maximum": 100
     }
   },
   "examples": [
     {
       "container_id": "MSCU4829176",
       "shipment_id": "SHP-20260724-0042",
+      "commodity_id": "AVO001",
       "commodity_name": "avocados",
       "timestamp": "2026-07-24T14:32:18.452Z",
       "latitude": 19.4326,
@@ -128,7 +142,8 @@
       "vibration": 0.18,
       "battery_level": 87.3,
       "transport_status": "in_transit",
-      "anomaly_type": "normal"
+      "anomaly_type": "normal",
+      "health_score": 97.5
     }
   ]
 }

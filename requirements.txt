@@ -2,3 +2,4 @@ faker
 pandas
 numpy
 python-dotenv
+kafka-python

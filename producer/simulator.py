@@ -10,6 +10,7 @@ import json
 import math
 import random
 import string
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -503,6 +504,34 @@ def print_event(event: dict) -> None:
     print("-" * 60)
 
 
+def create_kafka_producer():
+    """Initialize the Kafka producer, returning None when Kafka is unavailable."""
+    try:
+        import importlib.util
+
+        module_path = PROJECT_ROOT / "kafka" / "producer.py"
+        spec = importlib.util.spec_from_file_location("atmosync_kafka_producer", module_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Unable to load Kafka producer module from {module_path}")
+
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        KafkaProducer = module.KafkaProducer
+
+        producer = KafkaProducer()
+        if producer.connect():
+            return producer
+
+        print(
+            f"Warning: Kafka unavailable ({producer.last_error}); "
+            "continuing with console output only."
+        )
+    except Exception as exc:
+        print(f"Warning: Kafka producer could not be initialized ({exc}); continuing with console output only.")
+
+    return None
+
+
 def run_simulation(
     container_count: int = 20,
     interval_seconds: float = 1.0,
@@ -518,25 +547,39 @@ def run_simulation(
     constraints = parse_schema_constraints(schema)
     commodities = load_commodities(commodities_path)
     fleet = initialize_fleet(container_count, constraints, commodities)
+    kafka_producer = create_kafka_producer()
 
     print(f"Starting AtmoSync IoT simulator — {container_count} containers, {interval_seconds}s interval")
     print(f"Schema: {schema_path}")
     print(f"Commodities: {commodities_path} ({len(commodities)} loaded)")
+    if kafka_producer is not None:
+        print("Kafka publishing: enabled")
     print("Press Ctrl+C to stop.\n")
 
     try:
         while True:
             for container in fleet:
                 advance_container(container, constraints, interval_seconds)
-                print_event(build_event(container))
+                event = build_event(container)
+                print_event(event)
+                if kafka_producer is not None:
+                    kafka_producer.send_event(event)
+            if kafka_producer is not None:
+                kafka_producer.flush(timeout=5)
             time.sleep(interval_seconds)
     except KeyboardInterrupt:
         print("\nSimulator stopped.")
+    finally:
+        if kafka_producer is not None:
+            kafka_producer.close()
 
 
 def main() -> None:
     """Entry point: load env overrides and start the simulation."""
     load_dotenv(PROJECT_ROOT / ".env")
+
+    if str(PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(PROJECT_ROOT))
 
     container_count = int(os.getenv("SIMULATOR_DEVICE_COUNT", "20"))
     interval_seconds = float(os.getenv("SIMULATOR_INTERVAL_SECONDS", "1"))

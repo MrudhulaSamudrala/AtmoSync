@@ -94,6 +94,44 @@ python producer/simulator.py
 - Created producer and consumer modules.
 - Project ready for Kafka integration.
 
+## Step 8 - Kafka Producer
+
+The simulator now publishes every generated telemetry event to Kafka in addition to printing it to the console.
+
+### How the producer works
+
+`kafka/producer.py` defines a reusable `KafkaProducer` wrapper around **kafka-python**. On startup the simulator calls `connect()`, which builds a client from `config/kafka_config.py` (bootstrap servers, acks, retries, batching, compression, and client ID). Each event is sent with `send_event()`, batched asynchronously by kafka-python, then `flush()` ensures delivery before the next simulation interval. On shutdown, `close()` flushes remaining messages and releases the client.
+
+If Kafka is unreachable or misconfigured, connection and send failures are caught and logged; the simulator prints a warning and continues emitting events to the console only.
+
+### Why `container_id` is the message key
+
+Kafka routes messages with the same key to the same topic partition. Using `container_id` as the key keeps all readings for one shipping container ordered on a single partition, which preserves per-container time series for downstream consumers (Snowflake pipes, anomaly detection, spoilage dashboards) without cross-partition reordering.
+
+### JSON serialization
+
+Each telemetry dict is serialized with `json.dumps()` and encoded as UTF-8 bytes before publish. The payload matches the existing sensor schema (`config/sensor_schema.json`) — the same structure already printed to the console — so consumers can deserialize JSON directly without an extra schema registry step at this stage.
+
+### Event flow
+
+```
+producer/simulator.py
+    │
+    ├─ advance_container() / build_event()   ← telemetry, health, anomaly, spoilage (unchanged)
+    │
+    ├─ print_event()                       → stdout (JSON)
+    │
+    └─ KafkaProducer.send_event()          → Kafka topic (KAFKA_TOPIC)
+           key: container_id
+           value: JSON event
+```
+
+Ensure Kafka is running and `.env` contains valid `KAFKA_BOOTSTRAP_SERVERS` and `KAFKA_TOPIC` values, then run:
+
+```bash
+python producer/simulator.py
+```
+
 ## Documentation
 
 <!-- TODO: Add architecture overview -->

@@ -242,6 +242,64 @@ docker exec -it atmosync-kafka /opt/kafka/bin/kafka-console-consumer.sh \
 
 You should see each message key (`container_id`) paired with the JSON telemetry payload. Offsets in the producer logs correspond to the records visible to this consumer.
 
+## Step 9 – Kafka Consumer
+
+- Implemented reusable Kafka consumer
+- Reads telemetry events from Kafka
+- Deserializes JSON messages
+- Validates incoming telemetry
+- Processes each event through a dedicated processing function
+- Prints events for development
+- Ready for Snowflake ingestion
+
+### How to run the consumer
+
+Ensure Kafka is running and the simulator (or another producer) is publishing to `KAFKA_TOPIC`, then start the consumer:
+
+```bash
+python kafka/consumer.py
+```
+
+Expected startup logs:
+
+```
+INFO [...] Successfully connected to Kafka broker (bootstrap=localhost:9092, group=atmosync-consumer)
+INFO [...] Subscribed to topic: atmosync.sensor.readings
+INFO [...] Consumer started — waiting for telemetry events on topic atmosync.sensor.readings
+INFO [...] Event received: topic=atmosync.sensor.readings partition=0 offset=0 key=MSCU4829176
+```
+
+Each validated event is printed in a readable development format. Malformed messages log a warning and consumption continues.
+
+### Consumer architecture
+
+```
+IoT Simulator
+      ↓
+Kafka Producer
+      ↓
+Kafka Topic (atmosync.sensor.readings)
+      ↓
+Kafka Consumer (kafka/consumer.py)
+      ↓
+process_event()
+      ↓
+Snowflake (Next Step)
+```
+
+`kafka/consumer.py` defines a `KafkaConsumer` wrapper with four public methods:
+
+| Method | Responsibility |
+|--------|----------------|
+| `connect()` | Connect to the broker and subscribe to the configured topic |
+| `consume_events()` | Poll messages, deserialize JSON, validate fields, dispatch to `process_event()` |
+| `process_event(event)` | Handle each validated event (print now; Snowflake insert in Step 10) |
+| `close()` | Release the consumer and log shutdown |
+
+Configuration is loaded entirely from `config/kafka_config.py` (`KAFKA_CONSUMER_CONFIG`, `KAFKA_TOPIC`). Required telemetry fields are validated against `config/sensor_schema.json` before processing.
+
+Press `Ctrl+C` to stop the consumer gracefully.
+
 ## Documentation
 
 <!-- TODO: Add architecture overview -->

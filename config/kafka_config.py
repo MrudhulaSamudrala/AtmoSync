@@ -8,6 +8,7 @@ in kafka/producer.py and kafka/consumer.py.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -15,6 +16,8 @@ from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Connection & topic
@@ -27,15 +30,28 @@ KAFKA_TOPIC: str = os.getenv("KAFKA_TOPIC", "atmosync.sensor.readings")
 # Producer configuration
 # ---------------------------------------------------------------------------
 
+VALID_COMPRESSION_CODECS = frozenset({"gzip", "lz4", "zstd", "snappy"})
+
 KAFKA_PRODUCER_CONFIG: dict[str, str | int | float | bool] = {
     "bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS,
     "acks": os.getenv("KAFKA_PRODUCER_ACKS", "all"),
     "retries": int(os.getenv("KAFKA_PRODUCER_RETRIES", "3")),
     "linger.ms": int(os.getenv("KAFKA_PRODUCER_LINGER_MS", "5")),
     "batch.size": int(os.getenv("KAFKA_PRODUCER_BATCH_SIZE", "16384")),
-    "compression.type": os.getenv("KAFKA_PRODUCER_COMPRESSION", ""),
     "client.id": os.getenv("KAFKA_PRODUCER_CLIENT_ID", "atmosync-producer"),
 }
+
+# Compression is optional — only include when a valid codec is explicitly set.
+_compression = os.getenv("KAFKA_PRODUCER_COMPRESSION", "").strip().lower()
+if _compression:
+    if _compression in VALID_COMPRESSION_CODECS:
+        KAFKA_PRODUCER_CONFIG["compression.type"] = _compression
+    else:
+        logger.warning(
+            "Ignoring KAFKA_PRODUCER_COMPRESSION=%r; valid options: %s",
+            _compression,
+            ", ".join(sorted(VALID_COMPRESSION_CODECS)),
+        )
 
 # ---------------------------------------------------------------------------
 # Consumer configuration

@@ -17,7 +17,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.kafka_config import KAFKA_PRODUCER_CONFIG, KAFKA_TOPIC
+from config.kafka_config import (
+    KAFKA_PRODUCER_CONFIG,
+    KAFKA_TOPIC,
+    VALID_COMPRESSION_CODECS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,11 +73,36 @@ def _load_kafka_producer_client():
         sys.path = saved_path
 
 
+def _is_empty_config_value(value: Any) -> bool:
+    """Return True for None or blank strings that must not be passed to kafka-python."""
+    return value is None or (isinstance(value, str) and value.strip() == "")
+
+
 def _build_producer_kwargs(config: dict[str, str | int | float | bool]) -> dict[str, Any]:
-    """Translate config.kafka_config producer settings to kafka-python parameters."""
+    """Translate config.kafka_config producer settings to kafka-python parameters.
+
+    Skips None and empty-string values so kafka-python receives only valid options.
+    compression.type is included only when set to a supported codec.
+    """
     kwargs: dict[str, Any] = {}
     for key, value in config.items():
+        if _is_empty_config_value(value):
+            continue
+
         param_name = _CONFLUENT_TO_KAFKA_PYTHON.get(key, key)
+
+        if param_name == "compression_type":
+            codec = str(value).strip().lower()
+            if codec not in VALID_COMPRESSION_CODECS:
+                logger.warning(
+                    "Ignoring invalid compression.type=%r; valid options: %s",
+                    value,
+                    ", ".join(sorted(VALID_COMPRESSION_CODECS)),
+                )
+                continue
+            kwargs[param_name] = codec
+            continue
+
         kwargs[param_name] = value
 
     bootstrap_servers = kwargs.get("bootstrap_servers")
@@ -138,8 +167,15 @@ class KafkaProducer:
             return True
         except Exception as exc:
             self._connected = False
-            self._client = None
             self._last_error = str(exc)
+            # Close a partially initialized client so background metadata threads
+            # are stopped cleanly (avoids "weakly-referenced object" errors).
+            if self._client is not None:
+                try:
+                    self._client.close()
+                except Exception:
+                    pass
+                self._client = None
             logger.warning("Kafka connection failed: %s", exc)
             return False
 

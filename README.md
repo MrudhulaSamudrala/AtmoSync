@@ -100,9 +100,65 @@ The simulator now publishes every generated telemetry event to Kafka in addition
 
 ### How the producer works
 
-`kafka/producer.py` defines a reusable `KafkaProducer` wrapper around **kafka-python**. On startup the simulator calls `connect()`, which builds a client from `config/kafka_config.py` (bootstrap servers, acks, retries, batching, compression, and client ID). Each event is sent with `send_event()`, batched asynchronously by kafka-python, then `flush()` ensures delivery before the next simulation interval. On shutdown, `close()` flushes remaining messages and releases the client.
+`kafka/producer.py` defines a reusable `KafkaProducer` wrapper around **kafka-python**. On startup the simulator calls `connect()`, which builds a client from `config/kafka_config.py` (bootstrap servers, acks, retries, batching, and client ID). Each event is sent with `send_event()`, batched asynchronously by kafka-python, then `flush()` ensures delivery before the next simulation interval. The producer stays connected for the entire simulation run and is only closed on shutdown via `close()`.
 
 If Kafka is unreachable or misconfigured, connection and send failures are caught and logged; the simulator prints a warning and continues emitting events to the console only.
+
+### Local development configuration
+
+1. Copy the environment template and adjust Kafka settings:
+
+```bash
+cp .env.example .env
+```
+
+2. Start the local Kafka broker:
+
+```bash
+docker compose up -d
+```
+
+3. Ensure `.env` contains at minimum:
+
+```
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+KAFKA_TOPIC=atmosync.sensor.readings
+```
+
+No compression setting is required. When `KAFKA_PRODUCER_COMPRESSION` is unset, the producer omits `compression.type` entirely and kafka-python defaults to no compression.
+
+### Optional compression
+
+Compression is **optional**. The producer only passes `compression.type` to kafka-python when `KAFKA_PRODUCER_COMPRESSION` is set to a supported codec:
+
+| Codec | Notes |
+|-------|-------|
+| `gzip` | Built-in, no extra packages |
+| `lz4` | Built-in via kafka-python |
+| `zstd` | Built-in via kafka-python |
+| `snappy` | Requires `python-snappy` (`pip install python-snappy`) |
+
+If the variable is unset, empty, or invalid, compression is not configured and the parameter is omitted from the producer kwargs. Invalid values are logged as warnings and ignored.
+
+### Expected startup logs
+
+When Kafka is available:
+
+```
+Starting AtmoSync IoT simulator — 20 containers, 1.0s interval
+Kafka publishing: enabled
+...
+INFO [atmosync_kafka_producer] Successfully connected to Kafka broker (bootstrap=localhost:9092, topic=atmosync.sensor.readings)
+INFO [atmosync_kafka_producer] Kafka publish succeeded: topic=atmosync.sensor.readings partition=0 offset=0 container_id=...
+```
+
+When Kafka is unavailable:
+
+```
+Warning: Kafka unavailable (<error message>); continuing with console output only.
+```
+
+JSON events continue printing to the console in both cases.
 
 ### Why `container_id` is the message key
 
@@ -149,7 +205,7 @@ A Kafka **topic** is split into **partitions** — ordered, append-only logs. Me
 
 The producer sends a batch to the broker leader for the target partition. With `acks=all` (the default in `config/kafka_config.py`), the broker waits until the record is committed to the partition log (and replicated per cluster settings) before replying. kafka-python surfaces that reply as `RecordMetadata` (topic, partition, offset). The producer's success callback runs only after that acknowledgement — confirming the event is durably written, not merely queued locally.
 
-### Verify events are stored in Kafka
+### Verify events are reaching Kafka
 
 1. Start the broker (for example with Docker Compose):
 
@@ -157,9 +213,23 @@ The producer sends a batch to the broker leader for the target partition. With `
 docker compose up -d
 ```
 
-2. Run the simulator and watch for `Successfully connected to Kafka broker` and `Kafka publish succeeded` log lines.
+2. Run the simulator and watch for `Successfully connected to Kafka broker` and `Kafka publish succeeded` log lines:
 
-3. Read messages back from the topic:
+```bash
+python producer/simulator.py
+```
+
+3. Confirm the topic was created (auto-created on first publish when the broker allows it):
+
+```bash
+docker exec -it atmosync-kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --list
+```
+
+You should see `atmosync.sensor.readings` in the list after the simulator sends its first batch.
+
+4. Read messages back from the topic:
 
 ```bash
 docker exec -it atmosync-kafka /opt/kafka/bin/kafka-console-consumer.sh \

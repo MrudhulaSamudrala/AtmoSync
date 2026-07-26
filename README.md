@@ -300,6 +300,65 @@ Configuration is loaded entirely from `config/kafka_config.py` (`KAFKA_CONSUMER_
 
 Press `Ctrl+C` to stop the consumer gracefully.
 
+## Step 10 – Snowflake Integration
+
+- Connected Kafka Consumer to Snowflake
+- Automatic RAW table creation
+- Inserts one telemetry record per Kafka message
+- Modular Snowflake client
+- Environment-based configuration
+- Ready for dbt transformations
+
+### How to run the Snowflake pipeline
+
+1. Copy `.env.example` to `.env` and set all `SNOWFLAKE_*` variables.
+2. Install dependencies (includes `snowflake-connector-python`):
+
+```bash
+pip install -r requirements.txt
+```
+
+3. Start Kafka and the simulator as in earlier steps, then run the consumer:
+
+```bash
+python kafka/consumer.py
+```
+
+Expected startup logs:
+
+```
+INFO [...] Successfully connected to Kafka broker (bootstrap=localhost:9092, group=atmosync-consumer)
+INFO [...] Subscribed to topic: atmosync.sensor.readings
+INFO [...] ✓ Connected to Snowflake
+INFO [...] ✓ RAW table verified
+INFO [...] Consumer started — waiting for telemetry events on topic atmosync.sensor.readings
+INFO [...] ✓ Event inserted: container_id=MSCU4829176 shipment_id=SHP-20260726-0001
+```
+
+Invalid messages are logged as warnings and skipped. Insert failures are logged without stopping the consumer.
+
+### End-to-end architecture
+
+```
+IoT Simulator
+      ↓
+Kafka Producer
+      ↓
+Kafka Topic
+      ↓
+Kafka Consumer
+      ↓
+Snowflake RAW_SENSOR_EVENTS
+      ↓
+dbt Models (Next Step)
+      ↓
+Analytics Tables
+      ↓
+Apache Superset Dashboard
+```
+
+`snowflake/client.py` defines a `SnowflakeClient` with `connect()`, `ensure_table_exists()`, `insert_event()`, and `close()`. All SQL stays in that module; `kafka/consumer.py` only validates events and delegates inserts through `process_event()`.
+
 ## Documentation
 
 <!-- TODO: Add architecture overview -->

@@ -18,6 +18,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from config.kafka_config import KAFKA_CONSUMER_CONFIG, KAFKA_TOPIC
+from snowflake.client import SnowflakeClient
 
 logger = logging.getLogger(__name__)
 
@@ -126,9 +127,11 @@ class KafkaConsumer:
         self,
         topic: str = KAFKA_TOPIC,
         config: dict[str, str | int | float | bool] | None = None,
+        snowflake_client: SnowflakeClient | None = None,
     ) -> None:
         self._topic = topic
         self._config = dict(config or KAFKA_CONSUMER_CONFIG)
+        self._snowflake = snowflake_client
         self._client: Any | None = None
         self._client_cls: Any | None = None
         self._connected = False
@@ -239,7 +242,7 @@ class KafkaConsumer:
         """Return True when the event contains all required telemetry fields."""
         if not isinstance(event, dict):
             logger.warning(
-                "Event validation failed: expected JSON object at partition=%s offset=%s",
+                "✓ Invalid event skipped: expected JSON object at partition=%s offset=%s",
                 partition,
                 offset,
             )
@@ -248,7 +251,7 @@ class KafkaConsumer:
         missing_fields = sorted(field for field in REQUIRED_TELEMETRY_FIELDS if field not in event)
         if missing_fields:
             logger.warning(
-                "Event validation failed: missing fields %s at partition=%s offset=%s",
+                "✓ Invalid event skipped: missing fields %s at partition=%s offset=%s",
                 missing_fields,
                 partition,
                 offset,
@@ -258,31 +261,11 @@ class KafkaConsumer:
         return True
 
     def process_event(self, event: dict) -> None:
-        """Handle a validated telemetry event (print for development; Snowflake next)."""
-        # ------------------------------------------------------------------
-        # TODO (Step 10 — Snowflake ingestion):
-        # Insert the validated `event` dict into a Snowflake staging table here.
-        # Example: snowflake_loader.insert_telemetry(event)
-        # ------------------------------------------------------------------
+        """Handle a validated telemetry event by inserting it into Snowflake RAW storage."""
+        if self._snowflake is None:
+            raise RuntimeError("Snowflake client is not configured")
 
-        print(
-            "\n--- Telemetry Event ---\n"
-            f"Container:  {event['container_id']} | Shipment: {event['shipment_id']}\n"
-            f"Commodity:  {event['commodity_name']} ({event['commodity_id']})\n"
-            f"Timestamp:  {event['timestamp']}\n"
-            f"Location:   {event['latitude']}, {event['longitude']}\n"
-            f"Readings:   temp={event['temperature']} °C  "
-            f"humidity={event['humidity']}%  "
-            f"vibration={event['vibration']} g  "
-            f"battery={event['battery_level']}%\n"
-            f"Status:     {event['transport_status']}  "
-            f"anomaly={event['anomaly_type']}\n"
-            f"Health:     score={event['health_score']}  "
-            f"spoilage={event['spoilage_percentage']}%  "
-            f"shelf_life={event['remaining_shelf_life_days']} days  "
-            f"risk={event['spoilage_risk_level']}\n"
-            f"{'-' * 23}"
-        )
+        self._snowflake.insert_event(event)
 
     def close(self) -> None:
         """Close the consumer and release broker resources."""
@@ -297,22 +280,30 @@ class KafkaConsumer:
         finally:
             self._client = None
             self._connected = False
-            logger.info("Shutdown completed")
 
 
 def main() -> None:
-    """Entry point: connect to Kafka and consume telemetry events until interrupted."""
+    """Entry point: connect to Kafka and Snowflake, then consume telemetry events."""
     _configure_logging()
-    consumer = KafkaConsumer()
+    snowflake = SnowflakeClient()
+    consumer = KafkaConsumer(snowflake_client=snowflake)
 
     try:
         if not consumer.connect():
             logger.error("Kafka unavailable: %s", consumer.last_error)
             sys.exit(1)
 
+        if not snowflake.connect():
+            logger.error("Snowflake unavailable: %s", snowflake.last_error)
+            sys.exit(1)
+
+        if not snowflake.ensure_table_exists():
+            logger.error("Snowflake RAW table setup failed: %s", snowflake.last_error)
+            sys.exit(1)
+
         consumer.consume_events()
     except KeyboardInterrupt:
-        logger.info("Stopping consumer...")
+        pass
     except ConnectionError as exc:
         logger.error("Kafka unavailable: %s", exc)
         sys.exit(1)
@@ -320,7 +311,9 @@ def main() -> None:
         logger.exception("Unexpected consumer error: %s", exc)
         sys.exit(1)
     finally:
+        logger.info("✓ Consumer shutting down")
         consumer.close()
+        snowflake.close()
 
 
 if __name__ == "__main__":

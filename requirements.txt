@@ -3,3 +3,4 @@ pandas
 numpy
 python-dotenv
 kafka-python
+snowflake-connector-python

@@ -21,6 +21,16 @@ from config.kafka_config import KAFKA_PRODUCER_CONFIG, KAFKA_TOPIC
 
 logger = logging.getLogger(__name__)
 
+
+def _configure_logging() -> None:
+    """Ensure producer validation logs are visible when the simulator has no logging setup."""
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        )
+
+
 _CONFLUENT_TO_KAFKA_PYTHON = {
     "bootstrap.servers": "bootstrap_servers",
     "linger.ms": "linger_ms",
@@ -105,6 +115,8 @@ class KafkaProducer:
         if self._connected and self._client is not None:
             return True
 
+        _configure_logging()
+
         try:
             if self._client_cls is None:
                 self._client_cls = _load_kafka_producer_client()
@@ -119,7 +131,7 @@ class KafkaProducer:
             self._connected = True
             self._last_error = None
             logger.info(
-                "Kafka producer connected (bootstrap=%s, topic=%s)",
+                "Successfully connected to Kafka broker (bootstrap=%s, topic=%s)",
                 self._config.get("bootstrap.servers"),
                 self._topic,
             )
@@ -144,16 +156,42 @@ class KafkaProducer:
 
         try:
             future = self._client.send(self._topic, key=container_id, value=event)
-            future.add_errback(self._on_send_error)
+            future.add_callback(
+                lambda metadata, cid=container_id: self._on_send_success(metadata, cid)
+            )
+            future.add_errback(
+                lambda exc, cid=container_id: self._on_send_error(exc, cid)
+            )
             return True
         except Exception as exc:
             self._last_error = str(exc)
-            logger.warning("Failed to send event to Kafka: %s", exc)
+            logger.warning(
+                "Kafka publish failed: container_id=%s error=%s",
+                container_id,
+                exc,
+            )
             return False
 
-    def _on_send_error(self, exc: Exception) -> None:
+    def _on_send_success(self, record_metadata: Any, container_id: str) -> None:
+        """Log broker acknowledgement metadata after a successful publish."""
+        logger.info(
+            "Kafka publish succeeded: topic=%s partition=%s offset=%s container_id=%s",
+            record_metadata.topic,
+            record_metadata.partition,
+            record_metadata.offset,
+            container_id,
+        )
+
+    def _on_send_error(self, exc: Exception, container_id: str | None = None) -> None:
         self._last_error = str(exc)
-        logger.warning("Kafka send error: %s", exc)
+        if container_id:
+            logger.warning(
+                "Kafka publish failed: container_id=%s error=%s",
+                container_id,
+                exc,
+            )
+        else:
+            logger.warning("Kafka send error: %s", exc)
 
     def flush(self, timeout: float | None = None) -> None:
         """Block until outstanding messages are delivered (or timeout)."""

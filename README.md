@@ -132,6 +132,46 @@ Ensure Kafka is running and `.env` contains valid `KAFKA_BOOTSTRAP_SERVERS` and 
 python producer/simulator.py
 ```
 
+## Kafka Producer Validation
+
+- Verified connection to Kafka broker.
+- Verified telemetry events are published.
+- Added publish success logging.
+- Added publish failure logging.
+
+When the broker is reachable, the producer logs a successful connection on startup. After each acknowledged publish, it logs the **topic**, **partition**, **offset**, and **container_id**. Publish failures are logged with the error and `container_id`; the simulator keeps running and JSON events continue to print to the console for debugging.
+
+### Partition and offset
+
+A Kafka **topic** is split into **partitions** — ordered, append-only logs. Messages with the same key (`container_id`) land on the same partition, so readings for one container stay in order. Each message within a partition receives a monotonically increasing **offset** — its permanent position in that partition. Offsets let consumers resume from a known point and confirm that a specific record was stored.
+
+### How Kafka acknowledges a message
+
+The producer sends a batch to the broker leader for the target partition. With `acks=all` (the default in `config/kafka_config.py`), the broker waits until the record is committed to the partition log (and replicated per cluster settings) before replying. kafka-python surfaces that reply as `RecordMetadata` (topic, partition, offset). The producer's success callback runs only after that acknowledgement — confirming the event is durably written, not merely queued locally.
+
+### Verify events are stored in Kafka
+
+1. Start the broker (for example with Docker Compose):
+
+```bash
+docker compose up -d
+```
+
+2. Run the simulator and watch for `Successfully connected to Kafka broker` and `Kafka publish succeeded` log lines.
+
+3. Read messages back from the topic:
+
+```bash
+docker exec -it atmosync-kafka /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 \
+  --topic atmosync.sensor.readings \
+  --from-beginning \
+  --property print.key=true \
+  --property key.separator=" | "
+```
+
+You should see each message key (`container_id`) paired with the JSON telemetry payload. Offsets in the producer logs correspond to the records visible to this consumer.
+
 ## Documentation
 
 <!-- TODO: Add architecture overview -->

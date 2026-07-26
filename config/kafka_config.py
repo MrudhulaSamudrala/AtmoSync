@@ -33,7 +33,7 @@ KAFKA_PRODUCER_CONFIG: dict[str, str | int | float | bool] = {
     "retries": int(os.getenv("KAFKA_PRODUCER_RETRIES", "3")),
     "linger.ms": int(os.getenv("KAFKA_PRODUCER_LINGER_MS", "5")),
     "batch.size": int(os.getenv("KAFKA_PRODUCER_BATCH_SIZE", "16384")),
-    "compression.type": os.getenv("KAFKA_PRODUCER_COMPRESSION", "snappy"),
+    "compression.type": os.getenv("KAFKA_PRODUCER_COMPRESSION", ""),
     "client.id": os.getenv("KAFKA_PRODUCER_CLIENT_ID", "atmosync-producer"),
 }
 

@@ -1,0 +1,31 @@
+version: 2
+
+models:
+  - name: dim_commodity
+    description: >
+      Dimension table containing one record per agricultural commodity
+      observed in the sensor telemetry stream. Built from distinct
+      commodity identifiers in staging.
+    columns:
+      - name: commodity_id
+        description: Unique identifier for the agricultural commodity.
+        tests:
+          - unique
+          - not_null
+      - name: commodity_name
+        description: Human-readable commodity name.
+        tests:
+          - unique
+          - not_null
+          - accepted_values:
+              values:
+                - avocados
+                - blueberries
+                - strawberries
+                - grapes
+                - mangoes
+                - citrus
+                - leafy_greens
+                - tomatoes
+                - bananas
+                - apples

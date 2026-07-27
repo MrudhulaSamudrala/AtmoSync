@@ -1,0 +1,119 @@
+version: 2
+
+models:
+  - name: stg_sensor_events
+    description: >
+      Staging model for raw sensor telemetry. Reads from RAW_SENSOR_EVENTS,
+      applies consistent naming, casts columns to appropriate types, and
+      preserves one row per telemetry event without business logic.
+    columns:
+      - name: container_id
+        description: ISO 6346-style shipping container identifier.
+        tests:
+          - not_null
+      - name: shipment_id
+        description: Shipment manifest identifier linking the container to a load.
+        tests:
+          - not_null
+      - name: commodity_id
+        description: Unique identifier for the agricultural commodity.
+        tests:
+          - not_null
+      - name: commodity_name
+        description: Human-readable commodity name.
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - avocados
+                - blueberries
+                - strawberries
+                - grapes
+                - mangoes
+                - citrus
+                - leafy_greens
+                - tomatoes
+                - bananas
+                - apples
+      - name: event_timestamp
+        description: UTC timestamp when the sensor reading was captured.
+        tests:
+          - not_null
+      - name: latitude
+        description: GPS latitude of the container at reading time (decimal degrees).
+        tests:
+          - not_null
+      - name: longitude
+        description: GPS longitude of the container at reading time (decimal degrees).
+        tests:
+          - not_null
+      - name: temperature
+        description: Internal container temperature in degrees Celsius.
+        tests:
+          - not_null
+      - name: humidity
+        description: Relative humidity inside the container (percent).
+        tests:
+          - not_null
+      - name: vibration
+        description: Vibration intensity in g (gravitational acceleration).
+        tests:
+          - not_null
+      - name: battery_level
+        description: Remaining battery charge of the IoT sensor (percent).
+        tests:
+          - not_null
+      - name: transport_status
+        description: Current phase of the container in the logistics lifecycle.
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - loading
+                - in_transit
+                - at_port
+                - customs_hold
+                - unloading
+                - delivered
+                - idle
+                - sensor_alert
+      - name: anomaly_type
+        description: Active sensor anomaly classification for the reading.
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - normal
+                - temperature_spike
+                - humidity_spike
+                - heavy_vibration
+                - battery_failure
+      - name: health_score
+        description: Composite container health score (0–100).
+        tests:
+          - not_null
+      - name: spoilage_percentage
+        description: Estimated cumulative spoilage (0–100%).
+        tests:
+          - not_null
+      - name: remaining_shelf_life_days
+        description: Estimated remaining shelf life in days.
+        tests:
+          - not_null
+      - name: spoilage_risk_level
+        description: Discrete spoilage risk classification.
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Low', 'Medium', 'High', 'Critical']
+      - name: ingested_at
+        description: Timestamp when the event was inserted into Snowflake.
+        tests:
+          - not_null
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - container_id
+            - shipment_id
+            - event_timestamp

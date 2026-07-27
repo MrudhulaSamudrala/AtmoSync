@@ -1,0 +1,35 @@
+name: atmosync_dbt
+version: 1.0.0
+config-version: 2
+
+profile: atmosync_dbt
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - target
+  - dbt_packages
+
+models:
+  atmosync_dbt:
+    +materialized: table
+    staging:
+      +schema: staging
+      +tags: ["staging"]
+    marts:
+      +tags: ["marts"]
+      dimensions:
+        +schema: dimensions
+        +tags: ["dimensions"]
+      facts:
+        +schema: facts
+        +tags: ["facts"]
+
+vars:
+  raw_database: ATMOSYNC_DB
+  raw_schema: RAW

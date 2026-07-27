@@ -1,0 +1,21 @@
+# Copy to ~/.dbt/profiles.yml (or set DBT_PROFILES_DIR to this directory)
+# and export the SNOWFLAKE_* environment variables before running dbt.
+#
+# Example (PowerShell):
+#   $env:DBT_PROFILES_DIR = "C:\Users\User\AtmoSync\atmosync_dbt"
+#   Copy-Item profiles.yml.example profiles.yml
+
+atmosync_dbt:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      password: "{{ env_var('SNOWFLAKE_PASSWORD') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE') }}"
+      database: "{{ env_var('SNOWFLAKE_DATABASE', 'ATMOSYNC_DB') }}"
+      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE') }}"
+      schema: analytics
+      threads: 4
+      client_session_keep_alive: false
